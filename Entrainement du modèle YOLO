@@ -1,0 +1,78 @@
+import os
+import random
+import shutil
+from PIL import Image
+from pathlib import Path
+
+# === CONFIGURATION ===
+source_dir = "."  # car on place ce script dans le dossier contenant A/, B/, etc.
+output_dir = "yolo_dataset"
+max_images_per_class = 700
+train_ratio = 0.8
+
+# Mapping des classes
+class_map = {
+    "A": 0,  # LEFT
+    "B": 1,  # RIGHT
+    "C": 2,  # FIRE
+    "D": 3, "E": 3, "F": 3, "space": 3, "nothing": 3, "del": 3  # NONE
+}
+
+name_map = {
+    0: "LEFT",
+    1: "RIGHT",
+    2: "FIRE",
+    3: "NONE"
+}
+
+def create_yolo_label(img_path, class_id, label_path):
+    with Image.open(img_path) as img:
+        w, h = img.size
+    xc, yc = 0.5, 0.5
+    box_w, box_h = 0.8, 0.8
+    with open(label_path, "w") as f:
+        f.write(f"{class_id} {xc} {yc} {box_w} {box_h}\n")
+
+# === CRÉATION DOSSIERS ===
+for split in ["train", "val"]:
+    os.makedirs(f"{output_dir}/images/{split}", exist_ok=True)
+    os.makedirs(f"{output_dir}/labels/{split}", exist_ok=True)
+
+# === TRAITEMENT PAR CLASSE ===
+for folder in os.listdir(source_dir):
+    folder_path = os.path.join(source_dir, folder)
+    if not os.path.isdir(folder_path) or folder.lower() == "test":
+        continue
+
+    class_id = class_map.get(folder)
+    if class_id is None:
+        continue
+
+    all_images = [f for f in os.listdir(folder_path) if f.lower().endswith((".jpg", ".png"))]
+    all_images = sorted(all_images)
+    random.shuffle(all_images)
+    selected_images = all_images[:max_images_per_class]
+
+    n_train = int(train_ratio * len(selected_images))
+
+    for idx, img_name in enumerate(selected_images):
+        split = "train" if idx < n_train else "val"
+        src_path = os.path.join(folder_path, img_name)
+        dst_img = os.path.join(output_dir, "images", split, f"{folder}_{img_name}")
+        dst_lbl = os.path.join(output_dir, "labels", split, f"{folder}_{img_name.rsplit('.',1)[0]}.txt")
+
+        shutil.copy2(src_path, dst_img)
+        create_yolo_label(dst_img, class_id, dst_lbl)
+
+print("✅ Dataset YOLO généré")
+
+# === data.yaml ===
+with open(os.path.join(output_dir, "data.yaml"), "w") as f:
+    f.write(f"path: {Path(output_dir).absolute()}\n")
+    f.write("train: images/train\n")
+    f.write("val: images/val\n")
+    f.write("names:\n")
+    for i in sorted(name_map):
+        f.write(f"  {i}: {name_map[i]}\n")
+
+print("✅ Fichier data.yaml généré")
